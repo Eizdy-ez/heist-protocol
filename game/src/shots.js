@@ -79,6 +79,47 @@ export function stageShot(name, world) {
     settle(world, 0.6);
     return { screen: SCREEN_PLAY, best: 2450 };
   }
+  if (name === 'hunt5') {
+    // Level 5, the Obsidian Vault, at the red end of the meter: a guard has
+    // the thief in sight and is coming for them — alarm 85, HUNTED.
+    // Loot matches what is taken: 2 vaults ($1000) + 2 coins ($100) = $1100.
+    world.loadHeist(4);
+    placePlayer(world, 12, 5, 0.8);
+    world.state.loot = 1100;
+    world.state.vaultsLeft[0].taken = true;
+    world.state.vaultsLeft[1].taken = true;
+    world.state.coinsLeft[0].taken = true;
+    world.state.coinsLeft[1].taken = true;
+    world.state.alarm = 85;
+    placeGuard(world, 0, 11, 4, 0.785);
+    placeGuard(world, 1, 24, 13, -2.0);
+    placeGuard(world, 2, 25, 5, 2.6);
+    placeGuard(world, 3, 7, 14, 0.5);
+    placeGuard(world, 4, 13, 15, -1.2);
+    world.state.guards[0].mode = 'chase';
+    world.state.guards[0].chaseT = 3;
+    world.state.guards[0].lastX = world.state.player.x;
+    world.state.guards[0].lastY = world.state.player.y;
+    settle(world, 0.4);
+    return { screen: SCREEN_PLAY, best: 2450 };
+  }
+  if (name === 'escaped3') {
+    // The ESCAPED report card after level 3: levels 1–2 already escaped, so
+    // the campaign list shows three done nights and level 4 still locked.
+    world.loadHeist(2);
+    world.state.loot = 1350;
+    world.state.totalLoot = 3400;
+    world.state.totalTime = 108;
+    world.state.heistsDone = 3;
+    world.state.timesSpotted = 1;
+    world.state.coinsGot = 7;
+    world.state.vaultsGot = 2;
+    world.state.complete = true;
+    world.state.results[0] = { time: 30, spotted: 0, loot: 750, coins: 5, coinsTotal: 5, vaults: 1, vaultsTotal: 1, rank: 'GHOST' };
+    world.state.results[1] = { time: 32, spotted: 0, loot: 1300, coins: 6, coinsTotal: 6, vaults: 2, vaultsTotal: 2, rank: 'GHOST' };
+    world.state.results[2] = { time: 46, spotted: 1, loot: 1350, coins: 7, coinsTotal: 7, vaults: 2, vaultsTotal: 2, rank: 'SHADOW' };
+    return { screen: SCREEN_COMPLETE, best: 3400 };
+  }
   if (name === 'escaped4') {
     // The ESCAPED report card after level 4: levels 1–3 already escaped, so
     // the campaign list shows four done nights and level 5 still locked.
