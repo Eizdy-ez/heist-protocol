@@ -83,19 +83,19 @@ export function stageShot(name, world) {
     // The ESCAPED report card after level 4: levels 1–3 already escaped, so
     // the campaign list shows four done nights and level 5 still locked.
     world.loadHeist(3);
-    world.state.loot = 1800;
-    world.state.totalLoot = 5050;
+    world.state.loot = 1850;
+    world.state.totalLoot = 5250;
     world.state.totalTime = 166;
     world.state.heistsDone = 4;
     world.state.timesSpotted = 0;
-    world.state.coinsGot = 6;
+    world.state.coinsGot = 7;
     world.state.vaultsGot = 3;
     world.state.complete = true;
-    world.state.results[0] = { time: 30, spotted: 0, loot: 700, coins: 4, coinsTotal: 4, vaults: 1, vaultsTotal: 1, rank: 'GHOST' };
-    world.state.results[1] = { time: 32, spotted: 0, loot: 1250, coins: 5, coinsTotal: 5, vaults: 2, vaultsTotal: 2, rank: 'GHOST' };
-    world.state.results[2] = { time: 46, spotted: 1, loot: 1300, coins: 6, coinsTotal: 6, vaults: 2, vaultsTotal: 2, rank: 'SHADOW' };
-    world.state.results[3] = { time: 58, spotted: 0, loot: 1800, coins: 6, coinsTotal: 6, vaults: 3, vaultsTotal: 3, rank: 'GHOST' };
-    return { screen: SCREEN_COMPLETE, best: 5050 };
+    world.state.results[0] = { time: 30, spotted: 0, loot: 750, coins: 5, coinsTotal: 5, vaults: 1, vaultsTotal: 1, rank: 'GHOST' };
+    world.state.results[1] = { time: 32, spotted: 0, loot: 1300, coins: 6, coinsTotal: 6, vaults: 2, vaultsTotal: 2, rank: 'GHOST' };
+    world.state.results[2] = { time: 46, spotted: 1, loot: 1350, coins: 7, coinsTotal: 7, vaults: 2, vaultsTotal: 2, rank: 'SHADOW' };
+    world.state.results[3] = { time: 58, spotted: 0, loot: 1850, coins: 7, coinsTotal: 7, vaults: 3, vaultsTotal: 3, rank: 'GHOST' };
+    return { screen: SCREEN_COMPLETE, best: 5250 };
   }
   if (name === 'alarm') {
     world.loadHeist(3);

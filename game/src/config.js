@@ -48,14 +48,15 @@ export const LOOT = { coin: 50, vault: 500, timeBonusPerSecond: 8 };
 export const LIVES = 3;
 
 export const PALETTE = {
-  backdrop: '#0a0a10',
+  backdrop: '#070b16',
   text: '#f2ead8',
   muted: '#9a917e',
   gold: '#f2c94c',
   cyan: '#37e6d6',
+  neon: '#ff6ec7',
   red: '#ff4d4d',
   amber: '#ffb347',
-  panel: '#17161f',
+  panel: '#10182e',
 };
 
 // Deterministic hash of two integers in [0,1): floor speckle, tile shade, blade
@@ -66,3 +67,7 @@ export function hash2(x, y) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+// The display face for titles, heist names and room labels — an elegant
+// serif like the reference games' title screens, so the game reads as a
+// night in a grand old building, lit by neon.
+export const FONT_DISPLAY = 'Georgia, "Times New Roman", serif';

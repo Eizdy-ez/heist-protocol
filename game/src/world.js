@@ -65,11 +65,12 @@ export function createWorld() {
     state.heistIndex = index;
     const [sx, sy] = tileCenter(def.spawn[0], def.spawn[1]);
     state.player.x = sx; state.player.y = sy; state.player.facing = 0;
-    state.guards = def.guards.map((g) => {
+    state.guards = def.guards.map((g, i) => {
       const [gx, gy] = tileCenter(g.path[0][0], g.path[0][1]);
       return {
         x: gx, y: gy, path: g.path, pathIdx: 1, dir: 1, speed: g.speed,
         facing: 0, mode: 'patrol', chaseT: 0, lastX: gx, lastY: gy, blind: 0,
+        name: (def.names && def.names[i]) || ('G-' + (i + 1)),
       };
     });
     state.cameras = def.cameras.map((c) => {

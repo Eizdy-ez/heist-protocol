@@ -4,7 +4,7 @@
 // against near-black shadow, amber guard cones that turn red on alarm, a small
 // glowing cyan thief. Cone edges are plain lines — never dashed. Patrol routes
 // are dotted lines, shown only while the sonar pulse lasts.
-import { FIELD, FONT, GUARD, CAMERA, PALETTE, TILE, TOOLS, hash2 } from './config.js';
+import { FIELD, FONT, FONT_DISPLAY, GUARD, CAMERA, PALETTE, TILE, TOOLS, hash2 } from './config.js';
 import { HEISTS, solidAt, tileCenter } from './heists.js';
 import { cameraFacing } from './vision.js';
 
@@ -17,13 +17,16 @@ export const SCREEN_CAMPAIGN = 'campaign';
 
 const SS = 2;
 // Layout, like the reference games: a full-width top bar (heist, objective,
-// time), the arena on the left, and a sidebar on the right with detection,
-// loot, tools, legend and controls. The arena is 1280x800 logical, fitted
-// into the 1010x736 area under the top bar and left of the sidebar.
+// time), a tool bar under it with the three tools as 3D boxes, the arena on
+// the left, a sidebar on the right with detection, loot and legend, and a
+// shortcut bar along the bottom. The arena is 1280x800 logical, fitted into
+// the 1010x642 area between the tool bar and the bottom bar.
 const TOPBAR_H = 64;
+const TOOLBAR_H = 58;
+const BOTTOMBAR_H = 36;
 const SIDEBAR_X = 1010;
-const FIELD_SCALE = Math.min((SIDEBAR_X) / FIELD.width, (FIELD.height - TOPBAR_H) / FIELD.height);
-const FIELD_Y = TOPBAR_H + ((FIELD.height - TOPBAR_H) - FIELD.height * FIELD_SCALE) / 2;
+const FIELD_SCALE = Math.min((SIDEBAR_X) / FIELD.width, (FIELD.height - TOPBAR_H - TOOLBAR_H - BOTTOMBAR_H) / FIELD.height);
+const FIELD_Y = TOPBAR_H + TOOLBAR_H + ((FIELD.height - TOPBAR_H - TOOLBAR_H - BOTTOMBAR_H) - FIELD.height * FIELD_SCALE) / 2;
 
 export function createRenderer(canvas) {
   const context = canvas.getContext('2d');
@@ -50,21 +53,77 @@ export function createRenderer(canvas) {
     return { x: field.x / SS, y: field.y / SS, scale: field.scale / SS };
   }
 
-  function text(value, x, y, size, color, align, weight) {
-    const key = size + (weight || '');
-    if (!fonts.has(key)) fonts.set(key, (weight || '') + ' ' + size + 'px ' + FONT);
+  // A hex colour with an alpha channel, so lamp pools and glows can be
+  // tinted with each heist's own accent colour — neon light, per building.
+  function hexA(hex, a) {
+    const n = parseInt(hex.slice(1), 16);
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+  }
+
+  // A rounded-rectangle path, for pills and key chips.
+  function rr(x, y, w, h, r) {
+    context.beginPath();
+    context.moveTo(x + r, y);
+    context.arcTo(x + w, y, x + w, y + h, r);
+    context.arcTo(x + w, y + h, x, y + h, r);
+    context.arcTo(x, y + h, x, y, r);
+    context.arcTo(x, y, x + w, y, r);
+    context.closePath();
+  }
+
+  // Corner brackets on a box — the thin gold corners the reference games
+  // put on every panel, so a flat box reads as a framed plaque.
+  function corners(x, y, w, h, color) {
+    const len = 12;
+    context.strokeStyle = color || PALETTE.gold;
+    context.lineWidth = 2;
+    for (const [cx, cy, dx, dy] of [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]]) {
+      context.beginPath();
+      context.moveTo(cx + dx * len, cy);
+      context.lineTo(cx, cy);
+      context.lineTo(cx, cy + dy * len);
+      context.stroke();
+    }
+  }
+
+  // Big display text in the gold gradient the title screens use.
+  function goldText(value, x, y, size, align) {
+    const grad = context.createLinearGradient(0, y - size, 0, y + 6);
+    grad.addColorStop(0, '#ffe9a3');
+    grad.addColorStop(0.5, '#f2c94c');
+    grad.addColorStop(1, '#a87f1f');
+    context.font = 'bold ' + size + 'px ' + FONT_DISPLAY;
+    context.fillStyle = grad;
+    context.textAlign = align || 'center';
+    context.shadowColor = 'rgba(242,201,76,0.7)';
+    context.shadowBlur = 22;
+    context.fillText(value, x, y);
+    context.shadowBlur = 0;
+  }
+
+  function text(value, x, y, size, color, align, weight, font) {
+    const face = font || FONT;
+    const key = size + (weight || '') + face;
+    if (!fonts.has(key)) fonts.set(key, (weight || '') + ' ' + size + 'px ' + face);
     context.font = fonts.get(key);
     context.fillStyle = color;
     context.textAlign = align || 'left';
     context.fillText(value, x, y);
   }
 
-  function cone(x, y, facing, halfAngle, range, fill, edge) {
+  // A vision cone as a pool of light, not a flat wedge: the gradient is
+  // brightest at the watcher and fades to nothing at the edge, so the cone
+  // reads as light spilling across the floor. Edge is a plain line, never
+  // dashed.
+  function cone(x, y, facing, halfAngle, range, inner, edge) {
+    const grad = context.createRadialGradient(x, y, 4, x, y, range);
+    grad.addColorStop(0, inner);
+    grad.addColorStop(1, inner.replace(/[\d.]+\)$/, '0)'));
     context.beginPath();
     context.moveTo(x, y);
     context.arc(x, y, range, facing - halfAngle, facing + halfAngle);
     context.closePath();
-    context.fillStyle = fill;
+    context.fillStyle = grad;
     context.fill();
     context.beginPath();
     context.arc(x, y, range, facing - halfAngle, facing + halfAngle);
@@ -122,25 +181,76 @@ export function createRenderer(canvas) {
     context.globalAlpha = 0.5;
     context.fillRect(0, 380, FIELD.width, 40);
     context.globalAlpha = 1;
-    // Walls with a lit top edge.
+    // Rugs: flat floor colour that varies the room — a darker carpet rect
+    // with a thin gold inner border and a diamond at each corner.
+    for (const r of (def.rugs || [])) {
+      const rx = r[0] * TILE, ry = r[1] * TILE, rw = r[2] * TILE, rh = r[3] * TILE;
+      context.fillStyle = pal.carpet;
+      context.globalAlpha = 0.6;
+      context.fillRect(rx, ry, rw, rh);
+      context.globalAlpha = 1;
+      context.strokeStyle = 'rgba(242,201,76,0.4)';
+      context.lineWidth = 2;
+      context.strokeRect(rx + 6, ry + 6, rw - 12, rh - 12);
+      context.fillStyle = 'rgba(242,201,76,0.55)';
+      for (const [dx, dy] of [[14, 14], [rw - 14, 14], [14, rh - 14], [rw - 14, rh - 14]]) {
+        context.beginPath();
+        context.moveTo(rx + dx, ry + dy - 4);
+        context.lineTo(rx + dx + 4, ry + dy);
+        context.lineTo(rx + dx, ry + dy + 4);
+        context.lineTo(rx + dx - 4, ry + dy);
+        context.closePath();
+        context.fill();
+      }
+    }
+    // Walls with a lit top edge, thick enough to read as a fortification.
     for (let row = 0; row < 20; row += 1) {
       for (let col = 0; col < 32; col += 1) {
         if (!solidAt(def, col, row)) continue;
         context.fillStyle = pal.wall;
         context.fillRect(col * TILE, row * TILE, TILE, TILE);
         context.fillStyle = pal.wallEdge;
-        context.fillRect(col * TILE, row * TILE, TILE, 4);
+        context.fillRect(col * TILE, row * TILE, TILE, 6);
         context.fillStyle = 'rgba(0,0,0,0.35)';
         context.fillRect(col * TILE, row * TILE + TILE - 5, TILE, 5);
       }
     }
+    // Framed pictures hung on the walls: a gold frame and a coloured
+    // canvas, so the walls are not bare stone.
+    for (const [fx, fy, color] of (def.frames || [])) {
+      const px = fx * TILE + 6, py = fy * TILE + 6;
+      context.fillStyle = PALETTE.gold;
+      context.fillRect(px, py, 28, 28);
+      context.fillStyle = color;
+      context.fillRect(px + 3, py + 3, 22, 22);
+      context.fillStyle = 'rgba(255,255,255,0.25)';
+      context.fillRect(px + 3, py + 3, 22, 6);
+    }
     drawGrass(def, pal);
-    // Lamp pools: warm amber light on the floor, solid edge, no dashed ring.
+    // Room labels, painted on the floor like the reference games: small
+    // serif caps in the heist's accent colour, with a dark pass behind them
+    // so they read over any tile.
+    context.font = 'bold 13px ' + FONT_DISPLAY;
+    context.textAlign = 'center';
+    for (const [lx, ly, label] of (def.labels || [])) {
+      const [cx, cy] = tileCenter(lx, ly);
+      try { context.letterSpacing = '3px'; } catch (e) { /* older canvas */ }
+      context.fillStyle = 'rgba(0,0,0,0.65)';
+      context.fillText(label, cx + 1, cy + 1);
+      context.globalAlpha = 0.75;
+      context.fillStyle = pal.accent;
+      context.fillText(label, cx, cy);
+      context.globalAlpha = 1;
+      try { context.letterSpacing = '0px'; } catch (e) { /* older canvas */ }
+    }
+    context.textAlign = 'left';
+    // Lamp pools: neon light in the heist's own accent colour on the floor,
+    // solid edge, no dashed ring.
     for (const [lx, ly] of def.lamps) {
       const [px, py] = tileCenter(lx, ly);
       const grad = context.createRadialGradient(px, py, 8, px, py, 150);
-      grad.addColorStop(0, 'rgba(255,179,71,0.34)');
-      grad.addColorStop(1, 'rgba(255,179,71,0)');
+      grad.addColorStop(0, hexA(pal.accent, 0.38));
+      grad.addColorStop(1, hexA(pal.accent, 0));
       context.fillStyle = grad;
       context.beginPath();
       context.arc(px, py, 150, 0, Math.PI * 2);
@@ -149,7 +259,7 @@ export function createRenderer(canvas) {
       context.beginPath();
       context.arc(px, py, 7, 0, Math.PI * 2);
       context.fill();
-      context.strokeStyle = 'rgba(255,179,71,0.55)';
+      context.strokeStyle = hexA(pal.accent, 0.55);
       context.lineWidth = 1.5;
       context.beginPath();
       context.arc(px, py, 26, 0, Math.PI * 2);
@@ -163,6 +273,10 @@ export function createRenderer(canvas) {
     for (const coin of state.coinsLeft) {
       if (coin.taken) continue;
       const [cx, cy] = tileCenter(coin.x, coin.y);
+      context.fillStyle = 'rgba(0,0,0,0.35)';
+      context.beginPath();
+      context.ellipse(cx + 3, cy + 6, 10, 4, 0, 0, Math.PI * 2);
+      context.fill();
       context.fillStyle = PALETTE.gold;
       context.beginPath();
       context.arc(cx, cy, 10, 0, Math.PI * 2);
@@ -173,6 +287,10 @@ export function createRenderer(canvas) {
     for (const vault of state.vaultsLeft) {
       if (vault.taken) continue;
       const [vx, vy] = tileCenter(vault.x, vault.y);
+      context.fillStyle = 'rgba(0,0,0,0.4)';
+      context.beginPath();
+      context.ellipse(vx + 4, vy + 17, 20, 6, 0, 0, Math.PI * 2);
+      context.fill();
       context.fillStyle = '#3a2c00';
       context.fillRect(vx - 18, vy - 18, 36, 36);
       context.strokeStyle = PALETTE.gold;
@@ -202,7 +320,7 @@ export function createRenderer(canvas) {
       const facing = cameraFacing(cam, state.time);
       const blind = cam.blind > 0;
       cone(cam.x, cam.y, facing, CAMERA.halfAngle, CAMERA.range,
-        blind ? 'rgba(120,120,120,0.10)' : 'rgba(255,179,71,0.20)',
+        blind ? 'rgba(120,120,120,0.14)' : 'rgba(255,179,71,0.30)',
         blind ? 'rgba(160,160,160,0.6)' : 'rgba(255,179,71,0.75)');
       context.fillStyle = blind ? '#777' : '#c8c8d0';
       context.fillRect(cam.x - 9, cam.y - 9, 18, 18);
@@ -215,7 +333,7 @@ export function createRenderer(canvas) {
       const alerted = g.mode === 'chase';
       const blind = g.blind > 0;
       cone(g.x, g.y, g.facing, GUARD.coneHalfAngle, GUARD.coneRange,
-        blind ? 'rgba(120,120,120,0.10)' : alerted ? 'rgba(255,77,77,0.26)' : 'rgba(255,179,71,0.22)',
+        blind ? 'rgba(120,120,120,0.14)' : alerted ? 'rgba(255,77,77,0.38)' : 'rgba(255,179,71,0.32)',
         blind ? 'rgba(160,160,160,0.6)' : alerted ? 'rgba(255,77,77,0.9)' : 'rgba(255,179,71,0.8)');
       // Dotted patrol route — only while the sonar pulse is live.
       if (state.sonarT > 0) {
@@ -231,6 +349,12 @@ export function createRenderer(canvas) {
         context.stroke();
         context.setLineDash([]);
       }
+      // Soft shadow under the guard, drawn before the body so it sits on
+      // the floor, not on the guard.
+      context.fillStyle = 'rgba(0,0,0,0.35)';
+      context.beginPath();
+      context.ellipse(g.x + 3, g.y + 15, 14, 5, 0, 0, Math.PI * 2);
+      context.fill();
       context.fillStyle = alerted ? '#ff4d4d' : '#2b2f3a';
       context.beginPath();
       context.arc(g.x, g.y, 14, 0, Math.PI * 2);
@@ -242,14 +366,41 @@ export function createRenderer(canvas) {
       context.beginPath();
       context.arc(g.x + Math.cos(g.facing) * 5, g.y + Math.sin(g.facing) * 5, 4, 0, Math.PI * 2);
       context.fill();
+      // The name tag: every guard has a name and a state, like the
+      // reference games' watch rosters.
+      const gState = blind ? 'BLIND' : alerted ? 'HUNT!' : 'PATROL';
+      const gColor = blind ? '#8a93a3' : alerted ? '#ff4d4d' : PALETTE.text;
+      const tag = (g.name || 'GUARD') + ' · ' + gState;
+      context.font = 'bold 11px ' + FONT;
+      const tagW = context.measureText(tag).width + 12;
+      context.fillStyle = 'rgba(10,10,16,0.88)';
+      context.fillRect(g.x - tagW / 2, g.y - 34, tagW, 16);
+      context.strokeStyle = 'rgba(242,201,76,0.5)';
+      context.lineWidth = 1;
+      context.strokeRect(g.x - tagW / 2, g.y - 34, tagW, 16);
+      text(tag, g.x, g.y - 22, 11, gColor, 'center', 'bold');
+      // A thought bubble when the guard is suspicious or hunting: '?' while
+      // the alarm is warm, '!' once the chase is on.
+      if (alerted || state.alarm >= 25) {
+        context.fillStyle = alerted ? '#ff4d4d' : '#ffb347';
+        context.beginPath();
+        context.arc(g.x + tagW / 2 + 12, g.y - 40, 9, 0, Math.PI * 2);
+        context.fill();
+        text(alerted ? '!' : '?', g.x + tagW / 2 + 12, g.y - 36, 12, '#0a0a10', 'center', 'bold');
+      }
     }
   }
 
   function drawPlayer(state) {
     const p = state.player;
     if (state.sonarT > 0) {
-      context.strokeStyle = 'rgba(55,230,214,0.7)';
+      // The sonar pulse rings neon: a pink outer ring over the cyan one.
+      context.strokeStyle = 'rgba(255,110,199,0.7)';
       context.lineWidth = 2;
+      context.beginPath();
+      context.arc(p.x, p.y, 66 + (5 - state.sonarT) * 40, 0, Math.PI * 2);
+      context.stroke();
+      context.strokeStyle = 'rgba(55,230,214,0.7)';
       context.beginPath();
       context.arc(p.x, p.y, 60 + (5 - state.sonarT) * 40, 0, Math.PI * 2);
       context.stroke();
@@ -277,6 +428,10 @@ export function createRenderer(canvas) {
     const glow = context.createRadialGradient(p.x, p.y, 2, p.x, p.y, 34);
     glow.addColorStop(0, 'rgba(55,230,214,0.55)');
     glow.addColorStop(1, 'rgba(55,230,214,0)');
+    context.fillStyle = 'rgba(0,0,0,0.4)';
+    context.beginPath();
+    context.ellipse(p.x + 3, p.y + 14, 13, 5, 0, 0, Math.PI * 2);
+    context.fill();
     context.fillStyle = glow;
     context.beginPath();
     context.arc(p.x, p.y, 34, 0, Math.PI * 2);
@@ -304,7 +459,17 @@ export function createRenderer(canvas) {
   // One small picture per game object, used by the FIELD GUIDE legend and by
   // the HUD tool bar, so a tool is never just a line of text: the player sees
   // what it looks like before they ever press the key.
-  function drawIcon(kind, x, y) {
+  function drawIcon(kind, x, y, s) {
+    // A scale below 1 draws the same picture smaller, centred on its 24px
+    // box — the sidebar legend uses 0.8 so five rows fit with the level
+    // list underneath.
+    s = s || 1;
+    if (s !== 1) {
+      context.save();
+      context.translate(x + 12, y + 12);
+      context.scale(s, s);
+      context.translate(-(x + 12), -(y + 12));
+    }
     if (kind === 'coin') {
       context.fillStyle = PALETTE.gold;
       context.beginPath();
@@ -480,6 +645,7 @@ export function createRenderer(canvas) {
       context.closePath();
       context.fill();
     }
+    if (s !== 1) context.restore();
   }
 
   // The FIELD GUIDE: a box of pictures with one line each, saying what every
@@ -504,9 +670,10 @@ export function createRenderer(canvas) {
     context.fillStyle = 'rgba(23,22,31,0.92)';
     context.fillRect(x, y, w, h);
     context.strokeStyle = PALETTE.gold;
-    context.lineWidth = 2;
+    context.lineWidth = 3.5;
     context.strokeRect(x, y, w, h);
-    text('FIELD GUIDE — WHAT EVERYTHING DOES', x + w / 2, y + 26, 17, PALETTE.gold, 'center', 'bold');
+    corners(x, y, w, h);
+    text('FIELD GUIDE — WHAT EVERYTHING DOES', x + w / 2, y + 26, 17, PALETTE.gold, 'center', 'bold', FONT_DISPLAY);
     for (let i = 0; i < GUIDE.length; i += 1) {
       const col = i < rows ? 0 : 1;
       const row = i % rows;
@@ -531,56 +698,137 @@ export function createRenderer(canvas) {
     context.fillStyle = 'rgba(10,10,16,0.95)';
     context.fillRect(0, 0, FIELD.width, TOPBAR_H);
     context.fillStyle = def.palette.accent;
-    context.fillRect(0, TOPBAR_H, FIELD.width, 3);
+    context.fillRect(0, TOPBAR_H, FIELD.width, 4);
     context.fillStyle = PALETTE.gold;
     context.beginPath();
     context.arc(28, 32, 17, 0, Math.PI * 2);
     context.fill();
     text(String(state.heistIndex + 1), 28, 39, 20, '#0a0a10', 'center', 'bold');
-    text(def.name, 54, 30, 22, PALETTE.text, 'left', 'bold');
+    context.shadowColor = hexA(def.palette.accent, 0.8);
+    context.shadowBlur = 10;
+    text(def.name, 54, 30, 22, PALETTE.text, 'left', 'bold', FONT_DISPLAY);
+    context.shadowBlur = 0;
     text(def.sub, 54, 52, 13, PALETTE.muted, 'left');
     const objective = state.exitOpen
       ? 'OBJECTIVE: reach the EXIT unseen'
       : 'OBJECTIVE: crack every vault, then reach the EXIT';
-    text(objective, FIELD.width / 2, 38, 15, state.exitOpen ? '#7dffb0' : PALETTE.gold, 'center', 'bold');
+    // The objective sits in its own outlined pill, so the player always
+    // knows what to do next at a glance.
+    context.font = 'bold 15px ' + FONT;
+    const objW = context.measureText(objective).width + 30;
+    context.fillStyle = 'rgba(10,10,16,0.65)';
+    rr(FIELD.width / 2 - objW / 2, 23, objW, 30, 15);
+    context.fill();
+    context.strokeStyle = PALETTE.gold;
+    context.lineWidth = 2;
+    context.stroke();
+    text(objective, FIELD.width / 2, 43, 15, state.exitOpen ? '#7dffb0' : PALETTE.gold, 'center', 'bold');
     text('TIME ' + formatTime(state.time), FIELD.width - 20, 30, 20, PALETTE.text, 'right', 'bold');
     text('HEIST ' + (state.heistIndex + 1) + '/5', FIELD.width - 20, 52, 13, PALETTE.muted, 'right');
   }
 
+  // The tool bar under the top bar, like the reference games' bottom tool
+  // row: each tool is a 3D box — a thick gold outline, a lit top edge, a
+  // dark drop under it — with its picture, its name, what it does, and its
+  // key and price. All three tools fit in one row.
+  function drawToolBar(state) {
+    const y = TOPBAR_H + 6;
+    const h = TOOLBAR_H - 12;
+    context.fillStyle = 'rgba(10,10,16,0.95)';
+    context.fillRect(0, TOPBAR_H, FIELD.width, TOOLBAR_H);
+    const tools = [
+      ['smoke', 'SMOKE PELLET', 'Blinds guards + cameras', '[1]  $150', state.loot >= TOOLS.smoke.cost],
+      ['decoy', 'DECOY COIN', 'A guard walks over to look', '[2]  $100', state.loot >= TOOLS.decoy.cost],
+      ['sonar', 'SONAR PULSE', 'Reveals patrols — guards hear it', '[3]  x' + state.sonarCharges, true],
+    ];
+    tools.forEach(([kind, name, func, price, afford], i) => {
+      const x = 16 + i * 424;
+      const w = 400;
+      // Drop shadow under the box, then the box itself.
+      context.fillStyle = 'rgba(0,0,0,0.55)';
+      context.fillRect(x + 3, y + h - 2, w, 4);
+      context.fillStyle = 'rgba(22,21,32,0.95)';
+      context.fillRect(x, y, w, h);
+      context.strokeStyle = PALETTE.gold;
+      context.lineWidth = 3;
+      context.strokeRect(x, y, w, h);
+      corners(x, y, w, h);
+      context.fillStyle = 'rgba(255,255,255,0.14)';
+      context.fillRect(x + 3, y + 3, w - 6, 2);
+      drawIcon(kind, x + 10, y + 11);
+      const col = afford ? PALETTE.text : PALETTE.muted;
+      text(name, x + 44, y + 20, 13, col, 'left', 'bold', FONT_DISPLAY);
+      text(func, x + 44, y + 39, 11, PALETTE.muted, 'left');
+      text(price, x + w - 12, y + 20, 13, afford ? PALETTE.gold : PALETTE.muted, 'right', 'bold');
+    });
+  }
+
+  // The shortcut bar along the bottom, like the reference games: every key
+  // the player needs, in one line. The controls used to live in the sidebar
+  // — they live here now.
+  function drawBottomBar() {
+    const y = FIELD.height - BOTTOMBAR_H;
+    context.fillStyle = 'rgba(10,10,16,0.95)';
+    context.fillRect(0, y, FIELD.width, BOTTOMBAR_H);
+    context.fillStyle = PALETTE.gold;
+    context.fillRect(0, y, FIELD.width, 2);
+    const parts = [
+      ['WASD / arrows', ' move'], ['click', ' to walk'], ['[1]', ' smoke'],
+      ['[2]', ' decoy'], ['[3]', ' sonar'], ['P', ' pause'], ['R', ' retry'], ['M', ' menu'],
+    ];
+    let total = 0;
+    context.font = '13px ' + FONT;
+    for (const [key, label] of parts) {
+      total += context.measureText(key).width + context.measureText(label).width + 34;
+    }
+    let x = (FIELD.width - total) / 2 + 17;
+    for (const [key, label] of parts) {
+      context.font = 'bold 13px ' + FONT;
+      const kw = context.measureText(key).width;
+      text(key, x, y + 23, 13, PALETTE.gold, 'left', 'bold');
+      x += kw;
+      context.font = '13px ' + FONT;
+      const lw = context.measureText(label).width;
+      text(label, x, y + 23, 13, PALETTE.muted, 'left');
+      x += lw + 34;
+    }
+  }
+
   // The right sidebar, drawn in full-canvas coordinates: detection in three
-  // stages, loot, the tools with their pictures, a compact legend, controls.
-  // The right sidebar, drawn in full-canvas coordinates: detection in three
-  // stages, loot, the tools with their pictures, and the legend. Every
-  // section sits in its own outlined box — the border is what separates
-  // TOOLS from LEGEND — and the LEGEND box stretches to the bottom, its rows
-  // spread evenly to fill it. There is no CONTROLS section any more; the
-  // controls live in the FIELD GUIDE on the title screen.
+  // stages with the WATCH roster, loot, and the legend. Every section sits
+  // in its own outlined box with a thick border, and the LEGEND box
+  // stretches to the bottom, its rows spread evenly to fill it. There is no
+  // TOOLS section any more — the tools live in the tool bar under the top
+  // bar — and no CONTROLS section; the controls live in the bottom bar.
   function drawSidebar(state, best) {
     const def = HEISTS[state.heistIndex];
     const x = SIDEBAR_X;
     const w = FIELD.width - SIDEBAR_X;
     const bx = x + 8, bw = w - 16;
-    const BOTTOM = FIELD.height - 12;
+    const BOTTOM = FIELD.height - BOTTOMBAR_H - 12;
     context.fillStyle = 'rgba(13,12,20,0.96)';
-    context.fillRect(x, TOPBAR_H, w, FIELD.height - TOPBAR_H);
+    context.fillRect(x, TOPBAR_H + TOOLBAR_H, w, FIELD.height - TOPBAR_H - TOOLBAR_H);
     context.fillStyle = def.palette.accent;
-    context.fillRect(x, TOPBAR_H, 3, FIELD.height - TOPBAR_H);
-    let y = TOPBAR_H + 12;
+    context.fillRect(x, TOPBAR_H + TOOLBAR_H, 3, FIELD.height - TOPBAR_H - TOOLBAR_H);
+    let y = TOPBAR_H + TOOLBAR_H + 12;
 
     function box(yTop, h, title) {
       context.fillStyle = 'rgba(22,21,32,0.9)';
       context.fillRect(bx, yTop, bw, h);
       context.strokeStyle = '#4a4a55';
-      context.lineWidth = 1.5;
+      context.lineWidth = 2.5;
       context.strokeRect(bx, yTop, bw, h);
-      text(title, bx + 12, yTop + 20, 12, PALETTE.gold, 'left', 'bold');
+      corners(bx, yTop, bw, h);
+      text(title, bx + 12, yTop + 20, 12, PALETTE.gold, 'left', 'bold', FONT_DISPLAY);
       return yTop + 38;
     }
     const ix = bx + 12;
     const rx = bx + bw - 12;
 
     // DETECTION — CLEAR green, SUSPICIOUS amber with a ?, HUNTED red.
-    let cy = box(y, 196, 'DETECTION');
+    // Below the gauge, the WATCH roster: every guard by name and state,
+    // like the reference games.
+    let cy = box(y, 240, 'DETECTION');
     const det = state.detection;
     const detColor = det === 'CLEAR' ? '#2fae5f' : det === 'SUSPICIOUS' ? '#ffb347' : '#ff4d4d';
     const detMark = det === 'CLEAR' ? '✓' : det === 'SUSPICIOUS' ? '?' : '!';
@@ -607,35 +855,33 @@ export function createRenderer(canvas) {
     cy += 18;
     text('SPOTTED', ix, cy, 12, PALETTE.muted, 'left', 'bold');
     text(String(state.timesSpotted), rx, cy, 12, PALETTE.text, 'right', 'bold');
-    y += 196 + 10;
+    cy += 24;
+    text('WATCH', ix, cy, 11, PALETTE.gold, 'left', 'bold');
+    cy += 16;
+    state.guards.forEach((g, i) => {
+      const wx = ix + (i % 2) * 115;
+      const wy = cy + Math.floor(i / 2) * 14;
+      const ws = g.blind > 0 ? 'BLIND' : g.mode === 'chase' ? 'HUNT!' : 'PATROL';
+      const wc = g.blind > 0 ? '#8a93a3' : g.mode === 'chase' ? '#ff4d4d' : PALETTE.text;
+      text((g.name || 'GUARD') + '  ' + ws, wx, wy + 11, 11, wc, 'left', 'bold');
+    });
+    y += 240 + 10;
 
     // LOOT — counts are derived from what is actually taken, so staged
     // scenes and live play always agree with the dollar total.
-    cy = box(y, 82, 'LOOT');
+    cy = box(y, 76, 'LOOT');
     const vaultsGot = def.vaults.length - state.vaultsLeft.filter((v) => !v.taken).length;
     const coinsGot = def.coins.length - state.coinsLeft.filter((c) => !c.taken).length;
     text('VAULTS  ' + vaultsGot + '/' + def.vaults.length, ix, cy, 14, PALETTE.text, 'left', 'bold');
     text('$' + state.loot, rx, cy, 14, PALETTE.gold, 'right', 'bold');
     cy += 24;
     text('COINS  ' + coinsGot + '/' + def.coins.length, ix, cy, 14, PALETTE.text, 'left', 'bold');
-    y += 82 + 10;
+    y += 76 + 10;
 
-    // TOOLS — picture first, then key and price.
-    cy = box(y, 130, 'TOOLS');
-    const tools = [
-      ['smoke', 'click [1] Smoke  $150'],
-      ['decoy', 'click [2] Decoy  $100'],
-      ['sonar', 'click [3] Sonar  x' + state.sonarCharges],
-    ];
-    for (const [kind, t] of tools) {
-      drawIcon(kind, ix, cy);
-      text(t, ix + 30, cy + 17, 13, state.loot >= 100 || kind === 'sonar' ? PALETTE.text : PALETTE.muted, 'left');
-      cy += 30;
-    }
-    y += 130 + 10;
-
-    // LEGEND — the guide, visible while playing, stretched to the bottom.
-    const legendH = BOTTOM - y;
+    // LEGEND — five essentials, icons drawn smaller so the level list
+    // underneath fits. The full guide lives on the title screen.
+    const LEVELS_H = 38 + HEISTS.length * 16;
+    const legendH = BOTTOM - y - LEVELS_H - 10;
     cy = box(y, legendH, 'LEGEND');
     const legend = [
       ['guard', 'Guard + vision cone'],
@@ -643,21 +889,39 @@ export function createRenderer(canvas) {
       ['grass', 'Low cover: hide here'],
       ['lamp', 'Lamp light: you are seen'],
       ['vault', 'Objective vault'],
-      ['exit', 'Exit'],
-      ['coin', 'Gold coin: $50'],
-      ['sonar', 'Sonar ring: patrols shown'],
     ];
     const rowH = (legendH - 46) / legend.length;
     for (let i = 0; i < legend.length; i += 1) {
       const iy = cy + i * rowH;
-      drawIcon(legend[i][0], ix, iy);
+      drawIcon(legend[i][0], ix, iy, 0.8);
       text(legend[i][1], ix + 30, iy + 17, 12, PALETTE.muted, 'left');
     }
+    y += legendH + 10;
+
+    // LEVELS — the night's five heists: the one being played is gold, the
+    // escaped ones show their best time, the rest are locked and grey.
+    cy = box(y, LEVELS_H, 'LEVELS');
+    HEISTS.forEach((h, i) => {
+      const done = state.results[i];
+      const current = i === state.heistIndex;
+      const locked = !done && i > state.heistIndex;
+      const ly = cy + i * 16;
+      if (current) {
+        context.fillStyle = 'rgba(242,201,76,0.14)';
+        context.fillRect(bx + 2, ly - 12, bw - 4, 16);
+      }
+      const lcol = current ? PALETTE.gold : locked ? '#55555f' : PALETTE.text;
+      text((i + 1) + '. ' + h.name, ix, ly, 12, lcol, 'left', 'bold', current ? FONT_DISPLAY : undefined);
+      const rcol = current ? PALETTE.gold : PALETTE.muted;
+      text(done ? '✓ ' + formatTime(done.time) : current ? '▶ NOW' : '—', rx, ly, 12, rcol, 'right', 'bold');
+    });
   }
 
   function drawHud(state, best) {
     drawTopBar(state, best);
+    drawToolBar(state);
     drawSidebar(state, best);
+    drawBottomBar();
   }
 
   function drawPanel(title, lines, prompt, accent) {
@@ -682,10 +946,17 @@ export function createRenderer(canvas) {
     context.fillStyle = PALETTE.panel;
     context.fillRect(x, y, width, height);
     context.strokeStyle = accent || PALETTE.gold;
-    context.lineWidth = 3;
+    context.lineWidth = 4;
     context.strokeRect(x, y, width, height);
+    corners(x, y, width, height);
     context.textBaseline = 'alphabetic';
-    text(title, FIELD.width / 2, y + 62, titleSize, PALETTE.text, 'center', 'bold');
+    context.font = 'bold ' + titleSize + 'px ' + FONT_DISPLAY;
+    context.fillStyle = PALETTE.text;
+    context.textAlign = 'center';
+    context.shadowColor = accent === '#ff4d4d' ? 'rgba(255,77,77,0.6)' : 'rgba(242,201,76,0.6)';
+    context.shadowBlur = 16;
+    context.fillText(title, FIELD.width / 2, y + 62);
+    context.shadowBlur = 0;
     for (let i = 0; i < lines.length; i += 1) {
       text(lines[i], FIELD.width / 2, y + 108 + i * 32, 19, PALETTE.muted, 'center');
     }
@@ -694,8 +965,12 @@ export function createRenderer(canvas) {
 
   function drawTitle(state, best) {
     const def = HEISTS[0];
-    context.fillStyle = '#0d0b12';
+    context.fillStyle = PALETTE.backdrop;
     context.fillRect(0, 0, FIELD.width, FIELD.height);
+    // A faint blueprint of the first heist behind the title, like the
+    // reference's map, and gold dust in the dark.
+    context.fillStyle = 'rgba(242,201,76,0.06)';
+    for (const w of def.walls) context.fillRect(w[0] * TILE, w[1] * TILE, w[2] * TILE, w[3] * TILE);
     for (let i = 0; i < 40; i += 1) {
       const x = hash2(i, 1) * FIELD.width;
       const y = 120 + hash2(i, 2) * 560;
@@ -704,36 +979,63 @@ export function createRenderer(canvas) {
       context.arc(x, y, 3 + hash2(i, 3) * 5, 0, Math.PI * 2);
       context.fill();
     }
-    text('VAULTBREAK', FIELD.width / 2, 130, 84, PALETTE.gold, 'center', 'bold');
-    text('FIVE HEISTS · ONE NIGHT · NO SECOND CHANCES', FIELD.width / 2, 172, 20, PALETTE.text, 'center');
-    text('Sneak past the guards, crack every vault, and run for the green EXIT before the alarm hits 100.', FIELD.width / 2, 204, 17, PALETTE.muted, 'center');
+    // The title: small caps over a huge gold serif wordmark, glowing.
+    context.font = 'bold 16px ' + FONT_DISPLAY;
+    context.textAlign = 'center';
+    try { context.letterSpacing = '6px'; } catch (e) { /* older canvas */ }
+    context.fillStyle = PALETTE.gold;
+    context.fillText('A  N I G H T  I N  T H E  C I T Y', FIELD.width / 2, 108);
+    try { context.letterSpacing = '0px'; } catch (e) { /* older canvas */ }
+    context.fillStyle = PALETTE.neon;
+    context.fillText('◆', FIELD.width / 2 - 300, 108);
+    context.fillText('◆', FIELD.width / 2 + 300, 108);
+    goldText('VAULTBREAK', FIELD.width / 2, 200, 92);
+    context.font = 'italic 18px ' + FONT_DISPLAY;
+    context.fillStyle = PALETTE.text;
+    context.textAlign = 'center';
+    context.fillText('Five heists. One night. No second chances.', FIELD.width / 2, 240);
+    // Two panels side by side: the night's heists, and the hands.
     const LEVEL_ICONS = ['bank', 'gallery', 'casino', 'museum', 'vault'];
+    const panelY = 272, panelH = 180;
+    for (const [px, title] of [[90, "THE NIGHT'S HEISTS"], [650, 'THE HANDS']]) {
+      context.fillStyle = 'rgba(16,24,46,0.92)';
+      context.fillRect(px, panelY, 540, panelH);
+      context.strokeStyle = PALETTE.gold;
+      context.lineWidth = 2.5;
+      context.strokeRect(px, panelY, 540, panelH);
+      corners(px, panelY, 540, panelH);
+      text(title, px + 16, panelY + 28, 14, PALETTE.gold, 'left', 'bold', FONT_DISPLAY);
+    }
     HEISTS.forEach((h, i) => {
-      const x = 84 + i * 222;
-      const y = 240;
-      context.fillStyle = h.palette.floor;
-      context.fillRect(x, y, 208, 140);
-      context.strokeStyle = h.palette.accent;
-      context.lineWidth = 2;
-      context.strokeRect(x, y, 208, 140);
-      // The object that pictures the level's name, right at the name.
-      drawIcon(LEVEL_ICONS[i], x + 10, y + 8);
-      const label = (i + 1) + '. ' + h.name;
-      let nameSize = 13;
-      context.font = 'bold ' + nameSize + 'px ' + FONT;
-      while (context.measureText(label).width > 156 && nameSize > 9) {
-        nameSize -= 1;
-        context.font = 'bold ' + nameSize + 'px ' + FONT;
-      }
-      text(label, x + 40, y + 30, nameSize, PALETTE.text, 'left', 'bold');
-      text(h.guards.length + ' guards · ' + h.cameras.length + ' cameras', x + 12, y + 58, 13, PALETTE.muted, 'left');
-      text(h.vaults.length + ' vaults · ' + h.coins.length + ' coins', x + 12, y + 82, 13, PALETTE.muted, 'left');
-      text('press ' + (i + 1) + ' on title', x + 12, y + 112, 13, h.palette.accent, 'left');
+      const ry = panelY + 56 + i * 24;
+      drawIcon(LEVEL_ICONS[i], 90 + 14, ry - 2, 0.67);
+      text((i + 1) + '. ' + h.name, 90 + 42, ry + 12, 13, PALETTE.text, 'left', 'bold', FONT_DISPLAY);
+      text('stealth · par ' + formatTime(h.par), 90 + 540 - 16, ry + 12, 12, PALETTE.muted, 'right');
     });
-    text('Move WASD / arrows · click to walk there', FIELD.width / 2, 414, 16, PALETTE.muted, 'center');
-    drawLegendBox(90, 436, FIELD.width - 180);
-    text('Press SPACE or click to start the first heist', FIELD.width / 2, 680, 22, PALETTE.gold, 'center', 'bold');
-    if (best > 0) text('Best night: $' + best, FIELD.width / 2, 716, 17, PALETTE.text, 'center');
+    const HANDS = [
+      ['WASD / arrows', 'move'],
+      ['Mouse + click', 'walk there'],
+      ['1  ·  2  ·  3', 'smoke · decoy · sonar'],
+      ['P  ·  R  ·  M', 'pause · retry · menu'],
+      ['SPACE', 'start the night'],
+    ];
+    HANDS.forEach(([key, label], i) => {
+      const ry = panelY + 56 + i * 24;
+      context.font = 'bold 11px ' + FONT;
+      const kw = context.measureText(key).width + 14;
+      context.fillStyle = 'rgba(10,10,16,0.9)';
+      rr(650 + 16, ry - 2, kw, 20, 4);
+      context.fill();
+      context.strokeStyle = PALETTE.gold;
+      context.lineWidth = 1.5;
+      context.stroke();
+      text(key, 650 + 16 + kw / 2, ry + 12, 11, PALETTE.gold, 'center', 'bold');
+      text(label, 650 + 16 + kw + 10, ry + 12, 13, PALETTE.muted, 'left');
+    });
+    drawLegendBox(90, 474, FIELD.width - 180);
+    text('Press SPACE or click to start the first heist', FIELD.width / 2, 702, 22, PALETTE.gold, 'center', 'bold');
+    if (best > 0) text('Best night: $' + best, FIELD.width / 2, 734, 17, PALETTE.text, 'center');
+    else text('5 heists · 17 guards · 11 vaults · 33 coins · one way out, through the green EXIT', FIELD.width / 2, 734, 15, PALETTE.muted, 'center');
   }
 
   // The ESCAPED report card, like the reference games: a big panel with the
@@ -745,19 +1047,35 @@ export function createRenderer(canvas) {
     const stars = 1 + (res.coins === res.coinsTotal ? 1 : 0) + (res.rank === 'GHOST' ? 1 : 0);
     // Opaque backdrop: the report card covers the sidebar entirely, so no
     // sidebar text shows through the campaign list.
-    context.fillStyle = '#0a0a10';
+    context.fillStyle = PALETTE.backdrop;
     context.fillRect(0, 0, FIELD.width, FIELD.height);
     // Left panel.
     const px = 60, py = 90, pw = 560, ph = 620;
-    context.fillStyle = 'rgba(16,15,24,0.97)';
+    context.fillStyle = 'rgba(16,24,46,0.97)';
     context.fillRect(px, py, pw, ph);
     context.strokeStyle = PALETTE.gold;
-    context.lineWidth = 2;
+    context.lineWidth = 3;
     context.strokeRect(px, py, pw, ph);
-    text('NIGHT ' + (state.heistIndex + 1) + ' · ' + def.name, px + pw / 2, py + 34, 15, PALETTE.gold, 'center', 'bold');
-    text('ESCAPED', px + pw / 2, py + 108, 64, '#7dffb0', 'center', 'bold');
+    corners(px, py, pw, ph);
+    text('NIGHT ' + (state.heistIndex + 1) + ' · ' + def.name, px + pw / 2, py + 34, 15, PALETTE.gold, 'center', 'bold', FONT_DISPLAY);
+    const escGrad = context.createLinearGradient(0, py + 50, 0, py + 110);
+    escGrad.addColorStop(0, '#d8ffe6');
+    escGrad.addColorStop(0.5, '#7dffb0');
+    escGrad.addColorStop(1, '#2fae5f');
+    context.font = 'bold 64px ' + FONT_DISPLAY;
+    context.fillStyle = escGrad;
+    context.textAlign = 'center';
+    context.shadowColor = 'rgba(125,255,176,0.7)';
+    context.shadowBlur = 20;
+    context.fillText('ESCAPED', px + pw / 2, py + 108);
+    context.shadowBlur = 0;
     const rankColor = res.rank === 'GHOST' ? PALETTE.cyan : res.rank === 'SHADOW' ? '#9a917e' : '#ff4d4d';
-    text(res.rank, px + pw / 2, py + 168, 46, rankColor, 'center', 'bold');
+    context.font = 'bold 46px ' + FONT_DISPLAY;
+    context.fillStyle = rankColor;
+    context.shadowColor = rankColor;
+    context.shadowBlur = 14;
+    context.fillText(res.rank, px + pw / 2, py + 168);
+    context.shadowBlur = 0;
     const flavor = res.rank === 'GHOST' ? 'Never spotted. They will not even know you came.'
       : res.rank === 'SHADOW' ? 'Seen, but never caught. The crew slips away.'
       : 'Loud, but rich. The alarm will remember you.';
@@ -776,19 +1094,20 @@ export function createRenderer(canvas) {
     text('SPACE next night   ·   R retry   ·   M menu', px + pw / 2, py + 500, 15, PALETTE.gold, 'center', 'bold');
     // Right column: campaign level select.
     const cx = 660, cw = 560;
-    text('CAMPAIGN · LEVEL SELECT', cx + cw / 2, py + 34, 15, PALETTE.gold, 'center', 'bold');
+    text('CAMPAIGN · LEVEL SELECT', cx + cw / 2, py + 34, 15, PALETTE.gold, 'center', 'bold', FONT_DISPLAY);
     HEISTS.forEach((h, i) => {
       const y = py + 60 + i * 96;
       const done = state.results[i];
       const current = i === state.heistIndex;
       const locked = !done && i > state.heistIndex;
-      context.fillStyle = current ? 'rgba(242,201,76,0.12)' : 'rgba(16,15,24,0.85)';
+      context.fillStyle = current ? 'rgba(242,201,76,0.12)' : 'rgba(16,24,46,0.85)';
       context.fillRect(cx, y, cw, 80);
       context.strokeStyle = current ? PALETTE.gold : '#3a3a44';
       context.lineWidth = current ? 2 : 1;
       context.strokeRect(cx, y, cw, 80);
+      if (current) corners(cx, y, cw, 80);
       text(String(i + 1), cx + 24, y + 50, 22, done ? PALETTE.gold : PALETTE.muted, 'left', 'bold');
-      text(h.name, cx + 56, y + 32, 16, locked ? PALETTE.muted : PALETTE.text, 'left', 'bold');
+      text(h.name, cx + 56, y + 32, 16, locked ? PALETTE.muted : PALETTE.text, 'left', 'bold', FONT_DISPLAY);
       if (done) {
         text('Best ' + formatTime(done.time) + '  ·  ' + done.rank, cx + 56, y + 58, 13, PALETTE.muted, 'left');
         text('★'.repeat(1 + (done.coins === done.coinsTotal ? 1 : 0) + (done.rank === 'GHOST' ? 1 : 0)), cx + cw - 20, y + 46, 16, PALETTE.gold, 'right');
@@ -823,6 +1142,13 @@ export function createRenderer(canvas) {
     drawLoot(state);
     drawWatchers(state);
     drawPlayer(state);
+    // Vignette: the room's edges fall into darkness, like the reference
+    // games — the lamp pools and the cones are the light that matters.
+    const vig = context.createRadialGradient(FIELD.width / 2, FIELD.height / 2, 380, FIELD.width / 2, FIELD.height / 2, 780);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.38)');
+    context.fillStyle = vig;
+    context.fillRect(0, 0, FIELD.width, FIELD.height);
     if (state.message) text(state.message, FIELD.width / 2, 756, 15, PALETTE.gold, 'center');
     if (!state.exitOpen) {
       const left = state.vaultsLeft.filter((v) => !v.taken).length;
@@ -832,7 +1158,7 @@ export function createRenderer(canvas) {
     }
     context.strokeStyle = HEISTS[state.heistIndex].palette.accent;
     context.globalAlpha = 0.55;
-    context.lineWidth = 3;
+    context.lineWidth = 4;
     context.strokeRect(1, 1, FIELD.width - 2, FIELD.height - 2);
     context.globalAlpha = 1;
     // Top bar and sidebar, in full-canvas coordinates.
