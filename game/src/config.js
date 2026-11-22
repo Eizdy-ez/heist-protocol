@@ -42,7 +42,10 @@ export const ALARM = { max: 100, decayPerSecond: 13, caughtAt: 100 };
 export const TOOLS = {
   smoke: { key: 'Digit1', cost: 150, seconds: 4.5, radius: 135, name: 'SMOKE PELLET' },
   decoy: { key: 'Digit2', cost: 100, seconds: 6, name: 'DECOY COIN' },
-  sonar: { key: 'Digit3', cost: 0, charges: 2, seconds: 5, hearRadius: 150, name: 'SONAR PULSE' },
+  // DASH: a paid burst straight forward, in the direction the thief faces.
+  // Bought and fired in one press — the dash starts the moment it is paid for.
+  dash: { key: 'Digit3', cost: 100, seconds: 0.22, speed: 650, name: 'DASH' },
+  sonar: { key: 'Digit4', cost: 0, charges: 2, seconds: 5, hearRadius: 150, name: 'SONAR PULSE' },
 };
 export const LOOT = { coin: 50, vault: 500, timeBonusPerSecond: 8 };
 export const LIVES = 3;

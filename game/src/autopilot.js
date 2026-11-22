@@ -41,7 +41,14 @@ function hideBonus(def, col, row) {
   return 0;
 }
 
+function bombAt(def, col, row) {
+  for (const [bc, br] of (def.bombs || [])) if (bc === col && br === row) return true;
+  return false;
+}
+
 // Dijkstra over tiles from `from` to `to`; null when no route exists.
+// Bomb tiles are never part of a route — the autopilot walks around them,
+// the way a thief who can see the bomb would.
 export function findRoute(def, state, from, to) {
   const startKey = from[0] + ',' + from[1];
   const goalKey = to[0] + ',' + to[1];
@@ -56,6 +63,7 @@ export function findRoute(def, state, from, to) {
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = cur[0] + dx, ny = cur[1] + dy;
       if (solidAt(def, nx, ny)) continue;
+      if (bombAt(def, nx, ny)) continue;
       const key = nx + ',' + ny;
       const cost = dist.get(curKey) + 1 + coneDanger(def, state, nx, ny) + guardProximity(state, nx, ny) + hideBonus(def, nx, ny);
       if (cost < (dist.get(key) ?? Infinity)) {
@@ -91,7 +99,7 @@ export function createAutopilot(world) {
 
   // Returns {move, tool} for one step, or null when the heist is over.
   function decide(state, dt) {
-    if (state.caught || state.complete) return null;
+    if (state.caught || state.complete || state.bombed) return null;
     const def = HEISTS[state.heistIndex];
     // A guard right on top of us: back away from it, or freeze in the grass
     // until it walks on. Walking into a patrol is how bots get caught.

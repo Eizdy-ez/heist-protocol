@@ -12,9 +12,11 @@ A top-down stealth heist game for the make.fun "Make the best heist game" bounty
 - **Goal:** crack every vault in the building, then reach the green EXIT
 - **[1] Smoke Pellet — $150:** blinds guards and cameras inside its cloud for 4.5s
 - **[2] Decoy Coin — $100:** tossed ahead of you; the nearest guard walks over to look
-- **[3] Sonar Pulse — 2 per heist:** reveals every guard's patrol route through walls for 5s — but guards within earshot hear it and come looking
+- **[3] Dash — $100:** a fast burst straight forward, in the direction you face — bought and fired in one press
+- **[4] Sonar Pulse — 2 per heist:** reveals every guard's patrol route through walls for 5s — but guards within earshot hear it and come looking
+- **Bombs** sit on the floor with a pulsing red ring. Step on one and the night ends in pieces — walk around them
 - **Tall grass** hides you unless a guard is very close (48 px). **Lamp light** exposes you. The HUD shows your visibility: SEEN / HIDDEN / SHADOW / EXPOSED
-- **P** pause, **R** retry the heist, **1–5** on the title screen picks a heist
+- **P** pause, **R** retry the heist, **SPACE** starts the first heist, **5–8** on the title screen jumps to heists 2–5
 
 ## The five heists
 

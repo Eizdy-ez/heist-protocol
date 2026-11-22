@@ -1,8 +1,8 @@
 // VAULTBREAK — the rules and the state, with no drawing and no browser in it:
 // the thief, the guards and their patrols, the sweeping cameras, the alarm
-// meter, the loot, the three paid tools and the getaway. step() advances one
-// fixed step and returns what happened as bit flags, so the caller can react
-// without the world knowing about screens or sound.
+// meter, the loot, the four paid tools, the bombs on the floor and the
+// getaway. step() advances one fixed step and returns what happened as bit
+// flags, so the caller can react without the world knowing about screens or sound.
 import { ALARM, CAMERA, GUARD, LOOT, PLAYER, TILE, TOOLS } from './config.js';
 import { HEISTS, solidAt, tileCenter } from './heists.js';
 import { cameraSeesCamera, guardSeesGuard, inHidePatch } from './vision.js';
@@ -13,6 +13,7 @@ export const EVENT_CAUGHT = 4;
 export const EVENT_COMPLETE = 8;
 export const EVENT_TOOL = 16;
 export const EVENT_SEEN = 32;
+export const EVENT_BOMB = 64;
 
 // Circle against tile: the closest point on the solid tile's rect to the
 // circle centre decides the push-out. Sampling points around the circle
@@ -50,6 +51,7 @@ export function createWorld() {
     guards: [], cameras: [], coinsLeft: [], vaultsLeft: [],
     loot: 0, alarm: 0, time: 0, elapsed: 0, sonarT: 0, sonarCharges: TOOLS.sonar.charges,
     smokeT: 0, smokeX: 0, smokeY: 0, decoy: null, decoyT: 0,
+    dashT: 0, dashDx: 1, dashDy: 0, bombed: false, trail: [],
     status: 'SHADOW', seenNow: false, wasSeen: false, exitOpen: false, caught: false,
     complete: false, score: 0, heistsDone: 0, totalLoot: 0, totalTime: 0, message: '',
     // Detection, in three stages the sidebar shows like a gauge: CLEAR (nobody
@@ -82,6 +84,8 @@ export function createWorld() {
     state.loot = 0; state.alarm = 0; state.time = 0;
     state.sonarT = 0; state.sonarCharges = TOOLS.sonar.charges;
     state.smokeT = 0; state.decoy = null; state.decoyT = 0;
+    state.dashT = 0; state.bombed = false;
+    state.trail = [[def.spawn[0], def.spawn[1]]];
     state.status = 'SHADOW'; state.seenNow = false; state.exitOpen = false;
     state.caught = false; state.complete = false; state.message = '';
     state.detection = 'CLEAR'; state.lastSeenT = -99; state.timesSpotted = 0;
@@ -108,7 +112,18 @@ export function createWorld() {
   }
 
   function useTool(kind) {
-    if (state.caught || state.complete) return 0;
+    if (state.caught || state.complete || state.bombed) return 0;
+    if (kind === 'dash') {
+      // Dash is bought and fired in one press: the thief bursts forward
+      // in the direction they face, sliding along any wall in the way.
+      if (state.loot < TOOLS.dash.cost) return 0;
+      state.loot -= TOOLS.dash.cost;
+      const a = state.player.facing;
+      state.dashDx = Math.cos(a); state.dashDy = Math.sin(a);
+      state.dashT = TOOLS.dash.seconds;
+      state.message = 'Dash! — a fast burst forward.';
+      return EVENT_TOOL;
+    }
     if (kind === 'smoke') {
       if (state.loot < TOOLS.smoke.cost || state.smokeT > 0) return 0;
       state.loot -= TOOLS.smoke.cost;
@@ -148,7 +163,7 @@ export function createWorld() {
   function step(dt, move, tool) {
     let events = 0;
     if (tool) events |= useTool(tool);
-    if (state.caught || state.complete) return events;
+    if (state.caught || state.complete || state.bombed) return events;
     const def = HEISTS[state.heistIndex];
     state.time += dt; state.elapsed += dt;
     if (state.sonarT > 0) state.sonarT = Math.max(0, state.sonarT - dt);
@@ -166,13 +181,24 @@ export function createWorld() {
       if (d < 10) clickGoal = null;
       else mv = { x: dx / d, y: dy / d };
     }
-    if (mv) {
+    if (state.dashT > 0) {
+      // A dash overrides steering: a fast burst in the dash direction,
+      // sliding along walls like normal movement does.
+      const p = moveCircle(def, state.player, state.dashDx * TOOLS.dash.speed * dt, state.dashDy * TOOLS.dash.speed * dt);
+      state.player.x = p.x; state.player.y = p.y;
+      state.player.facing = Math.atan2(state.dashDy, state.dashDx);
+      state.dashT = Math.max(0, state.dashT - dt);
+    } else if (mv) {
       const nx = state.player.x + mv.x * PLAYER.speed * dt;
       const ny = state.player.y + mv.y * PLAYER.speed * dt;
       const p = moveCircle(def, state.player, nx - state.player.x, ny - state.player.y);
       state.player.x = p.x; state.player.y = p.y;
       state.player.facing = Math.atan2(mv.y, mv.x);
     }
+    // The route for the ESCAPED map: one entry per tile the thief enters.
+    const tc = Math.floor(state.player.x / TILE), tr = Math.floor(state.player.y / TILE);
+    const lastTrail = state.trail[state.trail.length - 1];
+    if (!lastTrail || lastTrail[0] !== tc || lastTrail[1] !== tr) state.trail.push([tc, tr]);
 
     // Smoke blinds every watcher inside its cloud, guard and camera alike.
     const smoking = state.smokeT > 0;
@@ -258,6 +284,16 @@ export function createWorld() {
       state.caught = true;
       events |= EVENT_CAUGHT;
       return events;
+    }
+    // A bomb on the floor ends the night — not a bust, a blast. The thief
+    // has to be well onto the bomb's tile before it goes off.
+    for (const [bc, br] of (def.bombs || [])) {
+      const [bx, by] = tileCenter(bc, br);
+      if (Math.hypot(state.player.x - bx, state.player.y - by) < 26) {
+        state.bombed = true;
+        events |= EVENT_BOMB;
+        return events;
+      }
     }
 
     // Loot: coins are quick grabs, vaults are the job. The exit opens only

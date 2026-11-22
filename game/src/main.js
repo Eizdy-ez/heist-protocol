@@ -8,13 +8,13 @@
 // scene instead of running the loop, paints it twice and sets
 // window.__shotReady for a screenshot.
 import { BEST_KEY, STEP } from './config.js';
-import { createWorld, EVENT_CAUGHT, EVENT_COMPLETE } from './world.js';
+import { createWorld, EVENT_BOMB, EVENT_CAUGHT, EVENT_COMPLETE } from './world.js';
 import {
-  ACTION_CONFIRM, ACTION_DECOY, ACTION_MENU, ACTION_PAUSE, ACTION_RESTART, ACTION_SMOKE, ACTION_SONAR,
+  ACTION_CONFIRM, ACTION_DASH, ACTION_DECOY, ACTION_MENU, ACTION_PAUSE, ACTION_RESTART, ACTION_SMOKE, ACTION_SONAR,
   createInput,
 } from './input.js';
 import {
-  createRenderer, SCREEN_CAUGHT, SCREEN_CAMPAIGN, SCREEN_COMPLETE, SCREEN_PAUSED,
+  createRenderer, SCREEN_BOMB, SCREEN_CAUGHT, SCREEN_CAMPAIGN, SCREEN_COMPLETE, SCREEN_PAUSED,
   SCREEN_PLAY, SCREEN_TITLE,
 } from './render.js';
 import { stageShot } from './shots.js';
@@ -107,11 +107,11 @@ function runGame() {
       else if (actions & ACTION_CONFIRM) startHeist(0);
       return;
     }
-    if (actions & ACTION_RESTART && (screen === SCREEN_PLAY || screen === SCREEN_CAUGHT)) {
+    if (actions & ACTION_RESTART && (screen === SCREEN_PLAY || screen === SCREEN_CAUGHT || screen === SCREEN_BOMB)) {
       retryHeist();
       return;
     }
-    if (screen === SCREEN_CAUGHT && (actions & ACTION_CONFIRM)) { retryHeist(); return; }
+    if ((screen === SCREEN_CAUGHT || screen === SCREEN_BOMB) && (actions & ACTION_CONFIRM)) { retryHeist(); return; }
     if (screen === SCREEN_COMPLETE && (actions & ACTION_RESTART)) { retryHeist(); return; }
     if (screen === SCREEN_COMPLETE && (actions & ACTION_CONFIRM)) { afterComplete(); return; }
     if ((screen === SCREEN_COMPLETE || screen === SCREEN_CAMPAIGN) && (actions & ACTION_MENU)) {
@@ -138,6 +138,7 @@ function runGame() {
   function toolFrom(actions) {
     if (actions & ACTION_SMOKE) return 'smoke';
     if (actions & ACTION_DECOY) return 'decoy';
+    if (actions & ACTION_DASH) return 'dash';
     if (actions & ACTION_SONAR) return 'sonar';
     return null;
   }
@@ -161,6 +162,9 @@ function runGame() {
         if (events & EVENT_CAUGHT) {
           screen = SCREEN_CAUGHT;
           window.__autoplayDone = { heist: autoplayHeist + 1, result: 'caught', time: Math.round(world.state.time), loot: world.state.loot, alarm: Math.round(world.state.alarm) };
+        } else if (events & EVENT_BOMB) {
+          screen = SCREEN_BOMB;
+          window.__autoplayDone = { heist: autoplayHeist + 1, result: 'bombed', time: Math.round(world.state.time), loot: world.state.loot, alarm: Math.round(world.state.alarm) };
         } else if (events & EVENT_COMPLETE) {
           screen = SCREEN_COMPLETE;
           window.__autoplayDone = { heist: autoplayHeist + 1, result: 'complete', time: Math.round(world.state.time), loot: world.state.loot, alarm: Math.round(world.state.alarm) };
@@ -181,6 +185,9 @@ function runGame() {
     if (events & EVENT_CAUGHT) {
       screen = SCREEN_CAUGHT;
       announce('Busted. The alarm hit 100 or a guard caught you. Press Space to retry.');
+    } else if (events & EVENT_BOMB) {
+      screen = SCREEN_BOMB;
+      announce('Blown up. You stepped on a bomb. Press Space to retry.');
     } else if (events & EVENT_COMPLETE) {
       screen = SCREEN_COMPLETE;
       announce('Heist complete. Loot $' + world.state.loot + '. Press Space to continue.');

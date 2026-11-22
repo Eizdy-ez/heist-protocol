@@ -11,6 +11,7 @@ export const ACTION_DECOY = 8;
 export const ACTION_SONAR = 16;
 export const ACTION_RESTART = 32;
 export const ACTION_MENU = 64;
+export const ACTION_DASH = 2048;
 
 const UP = new Set(['ArrowUp', 'KeyW']);
 const DOWN = new Set(['ArrowDown', 'KeyS']);
@@ -35,9 +36,9 @@ export function createInput(target) {
     else if (RESTART.has(event.code)) { if (!event.repeat) actions |= ACTION_RESTART; }
     else if (event.code === TOOLS.smoke.key) { if (!event.repeat) actions |= ACTION_SMOKE; }
     else if (event.code === TOOLS.decoy.key) { if (!event.repeat) actions |= ACTION_DECOY; }
+    else if (event.code === TOOLS.dash.key) { if (!event.repeat) actions |= ACTION_DASH; }
     else if (event.code === TOOLS.sonar.key) { if (!event.repeat) actions |= ACTION_SONAR; }
     else if (event.code === 'KeyM') { if (!event.repeat) actions |= ACTION_MENU; }
-    else if (event.code === 'Digit4') { if (!event.repeat) actions |= 64; }
     else if (event.code === 'Digit5') { if (!event.repeat) actions |= 128; }
     else if (event.code === 'Digit6') { if (!event.repeat) actions |= 256; }
     else if (event.code === 'Digit7') { if (!event.repeat) actions |= 512; }

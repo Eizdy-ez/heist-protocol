@@ -118,6 +118,10 @@ export function stageShot(name, world) {
     world.state.results[0] = { time: 30, spotted: 0, loot: 750, coins: 5, coinsTotal: 5, vaults: 1, vaultsTotal: 1, rank: 'GHOST' };
     world.state.results[1] = { time: 32, spotted: 0, loot: 1300, coins: 6, coinsTotal: 6, vaults: 2, vaultsTotal: 2, rank: 'GHOST' };
     world.state.results[2] = { time: 46, spotted: 1, loot: 1350, coins: 7, coinsTotal: 7, vaults: 2, vaultsTotal: 2, rank: 'SHADOW' };
+    // The route the thief took through the casino, for the ESCAPED map:
+    // down the left edge to the first vault, across the bottom, up the
+    // right side past the second vault, and out the green door.
+    world.state.trail = [[2, 2], [2, 4], [2, 6], [2, 8], [2, 10], [2, 12], [3, 12], [3, 14], [3, 16], [4, 17], [7, 17], [10, 17], [13, 17], [16, 17], [19, 17], [22, 17], [25, 17], [28, 17], [28, 15], [26, 15], [24, 14], [24, 11], [24, 8], [24, 6], [24, 4], [23, 4], [23, 1], [26, 1], [28, 1], [29, 2], [29, 4], [29, 5], [29, 8], [29, 11], [29, 14], [29, 17]];
     return { screen: SCREEN_COMPLETE, best: 3400 };
   }
   if (name === 'escaped4') {

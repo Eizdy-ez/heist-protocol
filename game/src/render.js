@@ -12,6 +12,7 @@ export const SCREEN_TITLE = 'title';
 export const SCREEN_PLAY = 'play';
 export const SCREEN_PAUSED = 'paused';
 export const SCREEN_CAUGHT = 'caught';
+export const SCREEN_BOMB = 'bomb';
 export const SCREEN_COMPLETE = 'complete';
 export const SCREEN_CAMPAIGN = 'campaign';
 
@@ -58,6 +59,21 @@ export function createRenderer(canvas) {
   function hexA(hex, a) {
     const n = parseInt(hex.slice(1), 16);
     return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+  }
+
+  // Glass: a frosted panel fill, tinted with the theme's accent colour at
+  // the top and fading to dark at the bottom. The tint is deliberately
+  // faint — the gold outline stays the strongest line on the box, so the
+  // glass never outshines the frame. One tint per heist, never one flat
+  // colour: the bank is gold glass, the gallery blue, the casino green,
+  // the museum red, the vault gold again.
+  function glassFill(x, y, w, h, accent) {
+    const g = context.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, hexA(accent, 0.16));
+    g.addColorStop(0.45, hexA(accent, 0.06));
+    g.addColorStop(1, 'rgba(10,10,16,0.88)');
+    context.fillStyle = g;
+    context.fillRect(x, y, w, h);
   }
 
   // A rounded-rectangle path, for pills and key chips.
@@ -305,6 +321,34 @@ export function createRenderer(canvas) {
       context.closePath();
       context.fill();
     }
+    // Bombs on the floor: a black ball with a lit fuse and a pulsing red
+    // ring. Step on one and the night ends — this is not a vault, it is a
+    // warning the player can see from across the room.
+    for (const [bc, br] of (def.bombs || [])) {
+      const [bx, by] = tileCenter(bc, br);
+      context.strokeStyle = 'rgba(255,77,77,' + (0.5 + 0.3 * Math.sin(state.time * 5)).toFixed(3) + ')';
+      context.lineWidth = 2;
+      context.beginPath();
+      context.arc(bx, by, 15 + Math.sin(state.time * 5) * 2, 0, Math.PI * 2);
+      context.stroke();
+      context.fillStyle = '#16161c';
+      context.beginPath();
+      context.arc(bx, by, 11, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = '#8a93a3';
+      context.lineWidth = 1.5;
+      context.stroke();
+      context.strokeStyle = '#c9a227';
+      context.lineWidth = 2;
+      context.beginPath();
+      context.moveTo(bx, by - 11);
+      context.lineTo(bx + 4, by - 17);
+      context.stroke();
+      context.fillStyle = Math.sin(state.time * 6) > 0 ? '#ffe066' : '#ff4d4d';
+      context.beginPath();
+      context.arc(bx + 4, by - 17, 3, 0, Math.PI * 2);
+      context.fill();
+    }
     const [ex, ey] = tileCenter(def.exit[0], def.exit[1]);
     context.fillStyle = state.exitOpen ? '#2fae5f' : '#3a3f4a';
     context.fillRect(ex - 18, ey - 18, 36, 36);
@@ -527,6 +571,37 @@ export function createRenderer(canvas) {
       context.beginPath();
       context.arc(x + 12, y + 12, 3, 0, Math.PI * 2);
       context.fill();
+    } else if (kind === 'dash') {
+      // A lightning bolt: the fast burst forward, gold on cyan.
+      context.fillStyle = PALETTE.gold;
+      context.beginPath();
+      context.moveTo(x + 14, y + 1);
+      context.lineTo(x + 6, y + 14);
+      context.lineTo(x + 11, y + 14);
+      context.lineTo(x + 9, y + 23);
+      context.lineTo(x + 18, y + 10);
+      context.lineTo(x + 13, y + 10);
+      context.closePath();
+      context.fill();
+    } else if (kind === 'bomb') {
+      // A round black bomb with a lit fuse — the thing never to step on.
+      context.fillStyle = '#16161c';
+      context.beginPath();
+      context.arc(x + 11, y + 14, 9, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = '#8a93a3';
+      context.lineWidth = 1.5;
+      context.stroke();
+      context.strokeStyle = '#c9a227';
+      context.lineWidth = 2;
+      context.beginPath();
+      context.moveTo(x + 11, y + 5);
+      context.lineTo(x + 15, y + 1);
+      context.stroke();
+      context.fillStyle = '#ff4d4d';
+      context.beginPath();
+      context.arc(x + 15, y + 1, 2.5, 0, Math.PI * 2);
+      context.fill();
     } else if (kind === 'grass') {
       context.fillStyle = '#2c4a26';
       context.fillRect(x, y + 10, 24, 14);
@@ -649,14 +724,16 @@ export function createRenderer(canvas) {
   }
 
   // The FIELD GUIDE: a box of pictures with one line each, saying what every
-  // object and tool in the game is for. Two columns, five entries each.
+  // object and tool in the game is for. Two columns, six entries each.
   const GUIDE = [
     ['coin', 'Gold coin — $50, grab it on the way'],
     ['vault', 'Vault — crack EVERY vault to open EXIT'],
     ['exit', 'EXIT — the getaway, run here when green'],
     ['smoke', 'click [1] Smoke $150 — blinds guards + cameras'],
     ['decoy', 'click [2] Decoy $100 — a guard walks over to look'],
-    ['sonar', 'click [3] Sonar x2 — reveals patrols, guards hear it'],
+    ['dash', 'click [3] Dash $100 — a fast burst forward'],
+    ['sonar', 'click [4] Sonar x2 — reveals patrols, guards hear it'],
+    ['bomb', 'Bomb — step on it and the night ends in pieces'],
     ['grass', 'Tall grass — hides you unless a guard is close'],
     ['lamp', 'Lamp light — standing in it exposes you'],
     ['cone', 'Guard cone — amber sees you, red is chasing'],
@@ -664,11 +741,10 @@ export function createRenderer(canvas) {
   ];
 
   function drawLegendBox(x, y, w) {
-    const rows = 5;
+    const rows = 6;
     const rowH = 30;
     const h = 44 + rows * rowH;
-    context.fillStyle = 'rgba(23,22,31,0.92)';
-    context.fillRect(x, y, w, h);
+    glassFill(x, y, w, h, PALETTE.gold);
     context.strokeStyle = PALETTE.gold;
     context.lineWidth = 3.5;
     context.strokeRect(x, y, w, h);
@@ -730,8 +806,9 @@ export function createRenderer(canvas) {
   // The tool bar under the top bar, like the reference games' bottom tool
   // row: each tool is a 3D box — a thick gold outline, a lit top edge, a
   // dark drop under it — with its picture, its name, what it does, and its
-  // key and price. All three tools fit in one row.
+  // key and price. All four tools fit in one row.
   function drawToolBar(state) {
+    const def = HEISTS[state.heistIndex];
     const y = TOPBAR_H + 6;
     const h = TOOLBAR_H - 12;
     context.fillStyle = 'rgba(10,10,16,0.95)';
@@ -739,16 +816,16 @@ export function createRenderer(canvas) {
     const tools = [
       ['smoke', 'SMOKE PELLET', 'Blinds guards + cameras', '[1]  $150', state.loot >= TOOLS.smoke.cost],
       ['decoy', 'DECOY COIN', 'A guard walks over to look', '[2]  $100', state.loot >= TOOLS.decoy.cost],
-      ['sonar', 'SONAR PULSE', 'Reveals patrols — guards hear it', '[3]  x' + state.sonarCharges, true],
+      ['dash', 'DASH', 'A fast burst forward', '[3]  $100', state.loot >= TOOLS.dash.cost],
+      ['sonar', 'SONAR PULSE', 'Reveals patrols — guards hear it', '[4]  x' + state.sonarCharges, true],
     ];
     tools.forEach(([kind, name, func, price, afford], i) => {
-      const x = 16 + i * 424;
-      const w = 400;
-      // Drop shadow under the box, then the box itself.
+      const x = 16 + i * 315;
+      const w = 303;
+      // Drop shadow under the box, then the glass box itself.
       context.fillStyle = 'rgba(0,0,0,0.55)';
       context.fillRect(x + 3, y + h - 2, w, 4);
-      context.fillStyle = 'rgba(22,21,32,0.95)';
-      context.fillRect(x, y, w, h);
+      glassFill(x, y, w, h, def.palette.accent);
       context.strokeStyle = PALETTE.gold;
       context.lineWidth = 3;
       context.strokeRect(x, y, w, h);
@@ -774,7 +851,7 @@ export function createRenderer(canvas) {
     context.fillRect(0, y, FIELD.width, 2);
     const parts = [
       ['WASD / arrows', ' move'], ['click', ' to walk'], ['[1]', ' smoke'],
-      ['[2]', ' decoy'], ['[3]', ' sonar'], ['P', ' pause'], ['R', ' retry'], ['M', ' menu'],
+      ['[2]', ' decoy'], ['[3]', ' dash'], ['[4]', ' sonar'], ['P', ' pause'], ['R', ' retry'], ['M', ' menu'],
     ];
     let total = 0;
     context.font = '13px ' + FONT;
@@ -813,8 +890,7 @@ export function createRenderer(canvas) {
     let y = TOPBAR_H + TOOLBAR_H + 12;
 
     function box(yTop, h, title) {
-      context.fillStyle = 'rgba(22,21,32,0.9)';
-      context.fillRect(bx, yTop, bw, h);
+      glassFill(bx, yTop, bw, h, def.palette.accent);
       context.strokeStyle = '#4a4a55';
       context.lineWidth = 2.5;
       context.strokeRect(bx, yTop, bw, h);
@@ -943,8 +1019,7 @@ export function createRenderer(canvas) {
     const y = (FIELD.height - height) / 2;
     context.fillStyle = 'rgba(10,10,16,0.88)';
     context.fillRect(0, 0, FIELD.width, FIELD.height);
-    context.fillStyle = PALETTE.panel;
-    context.fillRect(x, y, width, height);
+    glassFill(x, y, width, height, accent || PALETTE.gold);
     context.strokeStyle = accent || PALETTE.gold;
     context.lineWidth = 4;
     context.strokeRect(x, y, width, height);
@@ -998,8 +1073,7 @@ export function createRenderer(canvas) {
     const LEVEL_ICONS = ['bank', 'gallery', 'casino', 'museum', 'vault'];
     const panelY = 272, panelH = 180;
     for (const [px, title] of [[90, "THE NIGHT'S HEISTS"], [650, 'THE HANDS']]) {
-      context.fillStyle = 'rgba(16,24,46,0.92)';
-      context.fillRect(px, panelY, 540, panelH);
+      glassFill(px, panelY, 540, panelH, PALETTE.gold);
       context.strokeStyle = PALETTE.gold;
       context.lineWidth = 2.5;
       context.strokeRect(px, panelY, 540, panelH);
@@ -1015,7 +1089,7 @@ export function createRenderer(canvas) {
     const HANDS = [
       ['WASD / arrows', 'move'],
       ['Mouse + click', 'walk there'],
-      ['1  ·  2  ·  3', 'smoke · decoy · sonar'],
+      ['1  ·  2  ·  3  ·  4', 'smoke · decoy · dash · sonar'],
       ['P  ·  R  ·  M', 'pause · retry · menu'],
       ['SPACE', 'start the night'],
     ];
@@ -1032,10 +1106,73 @@ export function createRenderer(canvas) {
       text(key, 650 + 16 + kw / 2, ry + 12, 11, PALETTE.gold, 'center', 'bold');
       text(label, 650 + 16 + kw + 10, ry + 12, 13, PALETTE.muted, 'left');
     });
-    drawLegendBox(90, 474, FIELD.width - 180);
-    text('Press SPACE or click to start the first heist', FIELD.width / 2, 702, 22, PALETTE.gold, 'center', 'bold');
-    if (best > 0) text('Best night: $' + best, FIELD.width / 2, 734, 17, PALETTE.text, 'center');
-    else text('5 heists · 17 guards · 11 vaults · 33 coins · one way out, through the green EXIT', FIELD.width / 2, 734, 15, PALETTE.muted, 'center');
+    drawLegendBox(90, 460, FIELD.width - 180);
+    text('Press SPACE or click to start the first heist', FIELD.width / 2, 710, 22, PALETTE.gold, 'center', 'bold');
+    if (best > 0) text('Best night: $' + best, FIELD.width / 2, 742, 17, PALETTE.text, 'center');
+    else text('5 heists · 17 guards · 11 vaults · 33 coins · one way out, through the green EXIT', FIELD.width / 2, 742, 15, PALETTE.muted, 'center');
+  }
+
+  // The route map on the ESCAPED card: the heist as a small building plan —
+  // walls, vaults, the exit, the bombs, and the line the thief took from
+  // the spawn to the getaway. The map keeps the arena's aspect (1280x800),
+  // so a 240x150 box draws the rooms without squashing them.
+  function drawRouteMap(state, mx, my, mw, mh) {
+    const def = HEISTS[state.heistIndex];
+    const pal = def.palette;
+    context.fillStyle = 'rgba(10,10,16,0.9)';
+    context.fillRect(mx, my, mw, mh);
+    context.strokeStyle = PALETTE.gold;
+    context.lineWidth = 2;
+    context.strokeRect(mx, my, mw, mh);
+    const sx = mw / FIELD.width, sy = mh / FIELD.height;
+    context.fillStyle = pal.wall;
+    for (let row = 0; row < 20; row += 1) {
+      for (let col = 0; col < 32; col += 1) {
+        if (!solidAt(def, col, row)) continue;
+        context.fillRect(mx + col * TILE * sx, my + row * TILE * sy, TILE * sx + 0.5, TILE * sy + 0.5);
+      }
+    }
+    const trail = state.trail || [];
+    if (trail.length > 1) {
+      context.lineJoin = 'round';
+      context.beginPath();
+      trail.forEach(([tc, tr], i) => {
+        const x = mx + (tc + 0.5) * TILE * sx, y = my + (tr + 0.5) * TILE * sy;
+        if (i === 0) context.moveTo(x, y); else context.lineTo(x, y);
+      });
+      context.strokeStyle = PALETTE.gold;
+      context.lineWidth = 3;
+      context.stroke();
+      context.strokeStyle = PALETTE.cyan;
+      context.lineWidth = 1.5;
+      context.stroke();
+    }
+    // Spawn, vaults, bombs, exit.
+    const [sc, sr] = def.spawn;
+    context.fillStyle = PALETTE.cyan;
+    context.beginPath();
+    context.arc(mx + (sc + 0.5) * TILE * sx, my + (sr + 0.5) * TILE * sy, 4, 0, Math.PI * 2);
+    context.fill();
+    for (const [vc, vr] of def.vaults) {
+      const x = mx + (vc + 0.5) * TILE * sx, y = my + (vr + 0.5) * TILE * sy;
+      context.fillStyle = PALETTE.gold;
+      context.beginPath();
+      context.moveTo(x, y - 4);
+      context.lineTo(x + 4, y);
+      context.lineTo(x, y + 4);
+      context.lineTo(x - 4, y);
+      context.closePath();
+      context.fill();
+    }
+    for (const [bc, br] of (def.bombs || [])) {
+      context.fillStyle = '#ff4d4d';
+      context.beginPath();
+      context.arc(mx + (bc + 0.5) * TILE * sx, my + (br + 0.5) * TILE * sy, 3, 0, Math.PI * 2);
+      context.fill();
+    }
+    const [ec, er] = def.exit;
+    context.fillStyle = '#2fae5f';
+    context.fillRect(mx + (ec + 0.5) * TILE * sx - 4, my + (er + 0.5) * TILE * sy - 4, 8, 8);
   }
 
   // The ESCAPED report card, like the reference games: a big panel with the
@@ -1051,8 +1188,7 @@ export function createRenderer(canvas) {
     context.fillRect(0, 0, FIELD.width, FIELD.height);
     // Left panel.
     const px = 60, py = 90, pw = 560, ph = 620;
-    context.fillStyle = 'rgba(16,24,46,0.97)';
-    context.fillRect(px, py, pw, ph);
+    glassFill(px, py, pw, ph, def.palette.accent);
     context.strokeStyle = PALETTE.gold;
     context.lineWidth = 3;
     context.strokeRect(px, py, pw, ph);
@@ -1087,11 +1223,15 @@ export function createRenderer(canvas) {
       text(label, px + 60, y, 16, PALETTE.muted, 'left', 'bold');
       text(value, px + pw - 60, y, 16, PALETTE.text, 'right', 'bold');
     };
-    row('TIME', formatTime(res.time) + '  (par ' + formatTime(def.par) + ')', py + 320);
-    row('TIMES SPOTTED', String(res.spotted), py + 356);
-    row('LOOT', res.vaults + '/' + res.vaultsTotal + ' vaults · ' + res.coins + '/' + res.coinsTotal + ' coins', py + 392);
-    row('TAKE', '$' + res.loot + '  ·  night $' + state.totalLoot, py + 428);
-    text('SPACE next night   ·   R retry   ·   M menu', px + pw / 2, py + 500, 15, PALETTE.gold, 'center', 'bold');
+    row('TIME', formatTime(res.time) + '  (par ' + formatTime(def.par) + ')', py + 300);
+    row('TIMES SPOTTED', String(res.spotted), py + 328);
+    row('LOOT', res.vaults + '/' + res.vaultsTotal + ' vaults · ' + res.coins + '/' + res.coinsTotal + ' coins', py + 356);
+    row('TAKE', '$' + res.loot + '  ·  night $' + state.totalLoot, py + 384);
+    // The route map: the night as a little building plan — the walls, the
+    // vaults, the exit, and the gold-and-cyan line the thief actually took.
+    text('YOUR ROUTE', px + pw / 2, py + 416, 13, PALETTE.gold, 'center', 'bold', FONT_DISPLAY);
+    drawRouteMap(state, px + (pw - 240) / 2, py + 424, 240, 150);
+    text('SPACE next night   ·   R retry   ·   M menu', px + pw / 2, py + 600, 15, PALETTE.gold, 'center', 'bold');
     // Right column: campaign level select.
     const cx = 660, cw = 560;
     text('CAMPAIGN · LEVEL SELECT', cx + cw / 2, py + 34, 15, PALETTE.gold, 'center', 'bold', FONT_DISPLAY);
@@ -1171,6 +1311,12 @@ export function createRenderer(canvas) {
         'The alarm hit ' + Math.round(state.alarm) + ' — the crew scattered.',
         'Loot kept so far this heist: $' + state.loot + '. The vaults are still there.',
         'Read the cones. Use the grass. Spend the smoke.',
+      ], 'Press SPACE to retry this heist', '#ff4d4d');
+    } else if (screen === SCREEN_BOMB) {
+      drawPanel('BLOWN UP', [
+        'You stepped on a bomb. The night ends in pieces.',
+        'Loot kept so far this heist: $' + state.loot + '. The vaults are still there.',
+        'Watch the floor, not just the cones — the red ring means run around.',
       ], 'Press SPACE to retry this heist', '#ff4d4d');
     } else if (screen === SCREEN_COMPLETE) {
       drawComplete(state, best);
